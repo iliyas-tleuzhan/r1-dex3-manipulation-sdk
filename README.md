@@ -37,6 +37,15 @@ cmake --build build -j$(nproc)
 
 ## Run
 
+Read DEX3 hand positions without commanding the hand:
+
+```bash
+./build/bin/dex3_hand_position_monitor <network_interface> R
+./build/bin/dex3_hand_position_monitor <network_interface> L
+```
+
+This monitor is subscriber-only. It does not create a `HandCmd_` publisher and does not send motor commands, so it should not stiffen or lock the DEX3 hand while you move it by hand.
+
 Right hand:
 
 ```bash
