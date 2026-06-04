@@ -117,18 +117,17 @@ enum R1JointIndex {
   HeadYaw = 25,
 };
 
-struct Dex3Limits {
-  std::array<float, DEX3_MOTOR_MAX> min;
-  std::array<float, DEX3_MOTOR_MAX> max;
-};
+const std::array<float, DEX3_MOTOR_MAX> kLeftDex3OpenPose{
+    -0.07746f, -0.59442f, -0.04216f, -0.03199f, -0.01694f, -0.02221f, -0.01527f};
 
-const Dex3Limits kLeftDex3Limits{
-    {-1.05f, -0.724f, 0.0f, -1.57f, -1.75f, -1.57f, -1.75f},
-    {1.05f, 1.05f, 1.75f, 0.0f, 0.0f, 0.0f, 0.0f}};
+const std::array<float, DEX3_MOTOR_MAX> kRightDex3OpenPose{
+    -0.08564f, 0.57882f, -0.02465f, -0.01603f, -0.04005f, -0.00692f, -0.06273f};
 
-const Dex3Limits kRightDex3Limits{
-    {-1.05f, -1.05f, -1.75f, 0.0f, 0.0f, 0.0f, 0.0f},
-    {1.05f, 0.742f, 0.0f, 1.57f, 1.75f, 1.57f, 1.75f}};
+const std::array<float, DEX3_MOTOR_MAX> kLeftDex3ClosedPose{
+    -0.07639f, 1.01445f, 1.51530f, -1.59280f, -1.80383f, -1.59922f, -1.79961f};
+
+const std::array<float, DEX3_MOTOR_MAX> kRightDex3ClosedPose{
+    -0.08551f, -1.00146f, -1.52876f, 1.55184f, 1.71793f, 1.54252f, 1.72397f};
 
 struct RISMode {
   uint8_t id : 4;
@@ -447,26 +446,11 @@ class R1ArmDex3GraspExample {
   }
 
   std::array<float, DEX3_MOTOR_MAX> OpenHandPose() const {
-    std::array<float, DEX3_MOTOR_MAX> pose = HandPoseFromRatio(0.10f);
-    pose[3] = 0.0f;
-    pose[4] = 0.0f;
-    return pose;
+    return side_ == Side::LEFT ? kLeftDex3OpenPose : kRightDex3OpenPose;
   }
 
-  std::array<float, DEX3_MOTOR_MAX> HandPoseFromRatio(float ratio) const {
-    ratio = std::clamp(ratio, 0.0f, 1.0f);
-    const Dex3Limits& limits = side_ == Side::LEFT ? kLeftDex3Limits : kRightDex3Limits;
-    std::array<float, DEX3_MOTOR_MAX> pose{};
-
-    for (int i = 0; i < DEX3_MOTOR_MAX; ++i) {
-      pose[i] = Lerp(limits.min[i], limits.max[i], ratio);
-    }
-
-    return pose;
-  }
-
-  std::array<float, DEX3_MOTOR_MAX> ClosedHandPose(float ratio) const {
-    return HandPoseFromRatio(ratio);
+  std::array<float, DEX3_MOTOR_MAX> ClosedHandPose() const {
+    return side_ == Side::LEFT ? kLeftDex3ClosedPose : kRightDex3ClosedPose;
   }
 
   void OpenHand(float duration_seconds,
@@ -478,7 +462,7 @@ class R1ArmDex3GraspExample {
   void CloseHand(float duration_seconds,
                  const std::array<float, R1_NUM_MOTOR>* arm_hold_pose = nullptr) {
     std::cout << "\nClosing DEX3 hand..." << std::endl;
-    SendHandPoseForDuration(ClosedHandPose(0.85f), duration_seconds, arm_hold_pose);
+    SendHandPoseForDuration(ClosedHandPose(), duration_seconds, arm_hold_pose);
   }
 
   void SendHandPoseForDuration(const std::array<float, DEX3_MOTOR_MAX>& pose,
