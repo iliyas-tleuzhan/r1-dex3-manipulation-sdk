@@ -117,10 +117,18 @@ enum R1JointIndex {
   HeadYaw = 25,
 };
 
-const float maxLimits_left[DEX3_MOTOR_MAX] = {1.05, 1.05, 1.75, 0.0, 0.0, 0.0, 0.0};
-const float minLimits_left[DEX3_MOTOR_MAX] = {-1.05, -0.724, 0.0, -1.57, -1.75, -1.57, -1.75};
-const float maxLimits_right[DEX3_MOTOR_MAX] = {1.05, 0.742, 0.0, 1.57, 1.75, 1.57, 1.75};
-const float minLimits_right[DEX3_MOTOR_MAX] = {-1.05, -1.05, -1.75, 0.0, 0.0, 0.0, 0.0};
+struct Dex3Limits {
+  std::array<float, DEX3_MOTOR_MAX> min;
+  std::array<float, DEX3_MOTOR_MAX> max;
+};
+
+const Dex3Limits kLeftDex3Limits{
+    {-1.05f, -0.724f, 0.0f, -1.57f, -1.75f, -1.57f, -1.75f},
+    {1.05f, 1.05f, 1.75f, 0.0f, 0.0f, 0.0f, 0.0f}};
+
+const Dex3Limits kRightDex3Limits{
+    {-1.05f, -1.05f, -1.75f, 0.0f, 0.0f, 0.0f, 0.0f},
+    {1.05f, 0.742f, 0.0f, 1.57f, 1.75f, 1.57f, 1.75f}};
 
 struct RISMode {
   uint8_t id : 4;
@@ -161,6 +169,11 @@ inline uint32_t Crc32Core(uint32_t* ptr, uint32_t len) {
 
 float Lerp(float start, float target, float ratio) {
   return start * (1.0f - ratio) + target * ratio;
+}
+
+float SmoothStep(float ratio) {
+  ratio = std::clamp(ratio, 0.0f, 1.0f);
+  return ratio * ratio * (3.0f - 2.0f * ratio);
 }
 
 std::string SideToString(Side side) {
@@ -386,7 +399,9 @@ class R1ArmDex3GraspExample {
               << std::endl;
 
     for (int step = 0; step <= steps; ++step) {
-      const float ratio = std::clamp(static_cast<float>(step) / static_cast<float>(steps), 0.0f, 1.0f);
+      const float linear_ratio =
+          std::clamp(static_cast<float>(step) / static_cast<float>(steps), 0.0f, 1.0f);
+      const float ratio = SmoothStep(linear_ratio);
       std::array<float, R1_NUM_MOTOR> command_pose = start_pose;
 
       for (int joint = 0; joint < R1_NUM_MOTOR; ++joint) {
@@ -437,12 +452,11 @@ class R1ArmDex3GraspExample {
 
   std::array<float, DEX3_MOTOR_MAX> ClosedHandPose(float ratio) const {
     ratio = std::clamp(ratio, 0.0f, 1.0f);
-    const float* max_limits = side_ == Side::LEFT ? maxLimits_left : maxLimits_right;
-    const float* min_limits = side_ == Side::LEFT ? minLimits_left : minLimits_right;
+    const Dex3Limits& limits = side_ == Side::LEFT ? kLeftDex3Limits : kRightDex3Limits;
     std::array<float, DEX3_MOTOR_MAX> pose{};
 
     for (int i = 0; i < DEX3_MOTOR_MAX; ++i) {
-      pose[i] = min_limits[i] + ratio * (max_limits[i] - min_limits[i]);
+      pose[i] = Lerp(limits.min[i], limits.max[i], ratio);
     }
 
     return pose;
