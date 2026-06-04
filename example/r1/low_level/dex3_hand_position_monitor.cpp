@@ -9,6 +9,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <unitree/idl/hg/HandState_.hpp>
 #include <unitree/robot/channel/channel_subscriber.hpp>
@@ -76,8 +77,11 @@ bool ParseSide(const std::string& side_arg, Side* side) {
   return false;
 }
 
-std::string HandStateTopic(Side side) {
-  return side == Side::RIGHT ? "rt/lf/dex3/right/state" : "rt/lf/dex3/left/state";
+std::vector<std::string> HandStateTopics(Side side) {
+  if (side == Side::RIGHT) {
+    return {"rt/dex3/right/state", "rt/lf/dex3/right/state"};
+  }
+  return {"rt/dex3/left/state", "rt/lf/dex3/left/state"};
 }
 
 const std::array<HandJointLabel, DEX3_MOTOR_MAX>& LabelsForSide(Side side) {
@@ -90,14 +94,20 @@ class Dex3HandPositionMonitor {
       : side_(side), received_state_(false) {
     ChannelFactory::Instance()->Init(0, network_interface);
 
-    const std::string topic = HandStateTopic(side_);
-    std::cout << "Subscribing to DEX3 hand state topic: " << topic << std::endl;
+    const std::vector<std::string> topics = HandStateTopics(side_);
+    std::cout << "Subscribing to DEX3 hand state topics:" << std::endl;
+    for (const std::string& topic : topics) {
+      std::cout << "  " << topic << std::endl;
+    }
     std::cout << "Read-only monitor: no HandCmd publisher is created, so the hand is not stiffened or locked."
               << std::endl;
 
-    handstate_subscriber_.reset(new ChannelSubscriber<HandState_>(topic));
-    handstate_subscriber_->InitChannel(
-        std::bind(&Dex3HandPositionMonitor::HandStateHandler, this, std::placeholders::_1), 1);
+    for (const std::string& topic : topics) {
+      ChannelSubscriberPtr<HandState_> subscriber(new ChannelSubscriber<HandState_>(topic));
+      subscriber->InitChannel(
+          std::bind(&Dex3HandPositionMonitor::HandStateHandler, this, std::placeholders::_1, topic), 1);
+      handstate_subscribers_.push_back(subscriber);
+    }
   }
 
   void Run() {
@@ -113,29 +123,34 @@ class Dex3HandPositionMonitor {
   Side side_;
   std::mutex mutex_;
   HandState_ latest_state_;
+  std::string active_topic_;
   bool received_state_;
-  ChannelSubscriberPtr<HandState_> handstate_subscriber_;
+  std::vector<ChannelSubscriberPtr<HandState_>> handstate_subscribers_;
 
-  void HandStateHandler(const void* message) {
+  void HandStateHandler(const void* message, const std::string& topic) {
     std::lock_guard<std::mutex> lock(mutex_);
     latest_state_ = *(const HandState_*)message;
+    active_topic_ = topic;
     received_state_ = true;
   }
 
   void PrintState() {
     HandState_ state;
+    std::string active_topic;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       if (!received_state_) {
-        std::cout << "\rWaiting for " << SideToString(side_) << " DEX3 hand state..." << std::flush;
+        std::cout << "\rWaiting for " << SideToString(side_)
+                  << " DEX3 hand state on rt/dex3/.../state or rt/lf/dex3/.../state..." << std::flush;
         return;
       }
       state = latest_state_;
+      active_topic = active_topic_;
     }
 
     std::cout << "\033[2J\033[H";
     std::cout << "DEX3 " << SideToString(side_) << " hand current motor positions" << std::endl;
-    std::cout << "Topic: " << HandStateTopic(side_) << std::endl;
+    std::cout << "Receiving topic: " << active_topic << std::endl;
     std::cout << "This program only subscribes to state. It does not command, stiffen, or lock motors."
               << std::endl;
     std::cout << std::endl;
