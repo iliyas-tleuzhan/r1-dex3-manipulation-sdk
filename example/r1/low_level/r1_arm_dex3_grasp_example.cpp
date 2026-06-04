@@ -49,6 +49,7 @@ class DataBuffer {
 constexpr int R1_NUM_MOTOR = 26;
 constexpr int DEX3_MOTOR_MAX = 7;
 constexpr int DEX3_SENSOR_MAX = 9;
+constexpr float CONTROL_DT_SECONDS = 0.02f;
 
 struct MotorState {
   std::array<float, R1_NUM_MOTOR> q = {};
@@ -270,33 +271,33 @@ class R1ArmDex3GraspExample {
     std::array<float, R1_NUM_MOTOR> raised_pose = start_pose;
 
     if (side_ == Side::RIGHT) {
-      raised_pose[RightShoulderPitch] = start_pose[RightShoulderPitch] - 0.20f;
-      raised_pose[RightShoulderRoll] = start_pose[RightShoulderRoll] - 0.10f;
+      raised_pose[RightShoulderPitch] = start_pose[RightShoulderPitch] - 0.80f;
+      raised_pose[RightShoulderRoll] = start_pose[RightShoulderRoll] - 0.30f;
       raised_pose[RightShoulderYaw] = start_pose[RightShoulderYaw];
-      raised_pose[RightElbow] = start_pose[RightElbow] + 0.20f;
+      raised_pose[RightElbow] = start_pose[RightElbow] + 0.75f;
       raised_pose[RightWristRoll] = start_pose[RightWristRoll];
     } else {
-      raised_pose[LeftShoulderPitch] = start_pose[LeftShoulderPitch] - 0.20f;
-      raised_pose[LeftShoulderRoll] = start_pose[LeftShoulderRoll] + 0.10f;
+      raised_pose[LeftShoulderPitch] = start_pose[LeftShoulderPitch] - 0.80f;
+      raised_pose[LeftShoulderRoll] = start_pose[LeftShoulderRoll] + 0.30f;
       raised_pose[LeftShoulderYaw] = start_pose[LeftShoulderYaw];
-      raised_pose[LeftElbow] = start_pose[LeftElbow] + 0.20f;
+      raised_pose[LeftElbow] = start_pose[LeftElbow] + 0.75f;
       raised_pose[LeftWristRoll] = start_pose[LeftWristRoll];
     }
 
     std::cout << "\nDemo sequence: arm up -> hand open -> hand close -> hand open -> arm down" << std::endl;
-    MoveArmBetweenPoses(start_pose, raised_pose, 3.0f);
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    MoveArmBetweenPoses(start_pose, raised_pose, 2.5f);
+    HoldArmPose(raised_pose, 0.5f);
 
-    OpenHand(1.0f);
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    OpenHand(1.2f, &raised_pose);
+    HoldArmPose(raised_pose, 0.5f);
 
-    CloseHand(1.0f);
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    CloseHand(1.2f, &raised_pose);
+    HoldArmPose(raised_pose, 0.5f);
 
-    OpenHand(1.0f);
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    OpenHand(1.2f, &raised_pose);
+    HoldArmPose(raised_pose, 0.5f);
 
-    MoveArmBetweenPoses(raised_pose, start_pose, 3.0f);
+    MoveArmBetweenPoses(raised_pose, start_pose, 4.0f);
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
     StopHand();
@@ -380,8 +381,7 @@ class R1ArmDex3GraspExample {
   void MoveArmBetweenPoses(const std::array<float, R1_NUM_MOTOR>& start_pose,
                            const std::array<float, R1_NUM_MOTOR>& target_pose,
                            float duration_seconds) {
-    constexpr float control_dt = 0.02f;
-    const int steps = std::max(1, static_cast<int>(duration_seconds / control_dt));
+    const int steps = std::max(1, static_cast<int>(duration_seconds / CONTROL_DT_SECONDS));
     std::cout << "\nMoving " << SideToString(side_) << " arm over " << duration_seconds << " seconds..."
               << std::endl;
 
@@ -396,10 +396,20 @@ class R1ArmDex3GraspExample {
       }
 
       PublishR1BodyPose(command_pose);
-      std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(control_dt * 1000.0f)));
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(static_cast<int>(CONTROL_DT_SECONDS * 1000.0f)));
     }
 
     std::cout << "Arm movement finished." << std::endl;
+  }
+
+  void HoldArmPose(const std::array<float, R1_NUM_MOTOR>& hold_pose, float duration_seconds) {
+    const int steps = std::max(1, static_cast<int>(duration_seconds / CONTROL_DT_SECONDS));
+    for (int step = 0; step < steps; ++step) {
+      PublishR1BodyPose(hold_pose);
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(static_cast<int>(CONTROL_DT_SECONDS * 1000.0f)));
+    }
   }
 
   void PublishR1BodyPose(const std::array<float, R1_NUM_MOTOR>& q_target) {
@@ -421,37 +431,55 @@ class R1ArmDex3GraspExample {
     lowcmd_publisher_->Write(cmd);
   }
 
-  void OpenHand(float duration_seconds) {
-    std::cout << "\nOpening DEX3 hand..." << std::endl;
-    SendHandRatioForDuration(0.10f, duration_seconds);
+  std::array<float, DEX3_MOTOR_MAX> OpenHandPose() const {
+    return {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
   }
 
-  void CloseHand(float duration_seconds) {
-    std::cout << "\nClosing DEX3 hand..." << std::endl;
-    SendHandRatioForDuration(0.85f, duration_seconds);
-  }
-
-  void SendHandRatioForDuration(float ratio, float duration_seconds) {
+  std::array<float, DEX3_MOTOR_MAX> ClosedHandPose(float ratio) const {
     ratio = std::clamp(ratio, 0.0f, 1.0f);
-    constexpr float control_dt = 0.02f;
-    const int steps = std::max(1, static_cast<int>(duration_seconds / control_dt));
+    const float* max_limits = side_ == Side::LEFT ? maxLimits_left : maxLimits_right;
+    const float* min_limits = side_ == Side::LEFT ? minLimits_left : minLimits_right;
+    std::array<float, DEX3_MOTOR_MAX> pose{};
+
+    for (int i = 0; i < DEX3_MOTOR_MAX; ++i) {
+      pose[i] = min_limits[i] + ratio * (max_limits[i] - min_limits[i]);
+    }
+
+    return pose;
+  }
+
+  void OpenHand(float duration_seconds,
+                const std::array<float, R1_NUM_MOTOR>* arm_hold_pose = nullptr) {
+    std::cout << "\nOpening DEX3 hand..." << std::endl;
+    SendHandPoseForDuration(OpenHandPose(), duration_seconds, arm_hold_pose);
+  }
+
+  void CloseHand(float duration_seconds,
+                 const std::array<float, R1_NUM_MOTOR>* arm_hold_pose = nullptr) {
+    std::cout << "\nClosing DEX3 hand..." << std::endl;
+    SendHandPoseForDuration(ClosedHandPose(0.85f), duration_seconds, arm_hold_pose);
+  }
+
+  void SendHandPoseForDuration(const std::array<float, DEX3_MOTOR_MAX>& pose,
+                               float duration_seconds,
+                               const std::array<float, R1_NUM_MOTOR>* arm_hold_pose) {
+    const int steps = std::max(1, static_cast<int>(duration_seconds / CONTROL_DT_SECONDS));
 
     for (int step = 0; step < steps; ++step) {
-      SendHandRatioOnce(ratio, false);
-      std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<int>(control_dt * 1000.0f)));
+      if (arm_hold_pose) {
+        PublishR1BodyPose(*arm_hold_pose);
+      }
+      SendHandPoseOnce(pose, false);
+      std::this_thread::sleep_for(
+          std::chrono::milliseconds(static_cast<int>(CONTROL_DT_SECONDS * 1000.0f)));
     }
   }
 
-  void SendHandRatioOnce(float ratio, bool timeout) {
-    const float* max_limits = side_ == Side::LEFT ? maxLimits_left : maxLimits_right;
-    const float* min_limits = side_ == Side::LEFT ? minLimits_left : minLimits_right;
-
+  void SendHandPoseOnce(const std::array<float, DEX3_MOTOR_MAX>& pose, bool timeout) {
     for (int i = 0; i < DEX3_MOTOR_MAX; ++i) {
-      const float q = min_limits[i] + ratio * (max_limits[i] - min_limits[i]);
-
       hand_cmd_msg_.motor_cmd()[i].mode(MakeHandMode(i, timeout));
       hand_cmd_msg_.motor_cmd()[i].tau(0.0f);
-      hand_cmd_msg_.motor_cmd()[i].q(q);
+      hand_cmd_msg_.motor_cmd()[i].q(pose[i]);
       hand_cmd_msg_.motor_cmd()[i].dq(0.0f);
       hand_cmd_msg_.motor_cmd()[i].kp(timeout ? 0.0f : 1.5f);
       hand_cmd_msg_.motor_cmd()[i].kd(timeout ? 0.0f : 0.1f);
@@ -462,7 +490,7 @@ class R1ArmDex3GraspExample {
 
   void StopHand() {
     std::cout << "\nStopping DEX3 hand motors..." << std::endl;
-    SendHandRatioOnce(0.0f, true);
+    SendHandPoseOnce(OpenHandPose(), true);
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     std::cout << "DEX3 hand stop command sent." << std::endl;
   }
