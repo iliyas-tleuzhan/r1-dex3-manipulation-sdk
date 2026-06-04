@@ -287,13 +287,13 @@ class R1ArmDex3GraspExample {
       raised_pose[RightShoulderPitch] = start_pose[RightShoulderPitch] - 0.80f;
       raised_pose[RightShoulderRoll] = start_pose[RightShoulderRoll] - 0.30f;
       raised_pose[RightShoulderYaw] = start_pose[RightShoulderYaw];
-      raised_pose[RightElbow] = start_pose[RightElbow] + 0.75f;
+      raised_pose[RightElbow] = start_pose[RightElbow] - 0.75f;
       raised_pose[RightWristRoll] = start_pose[RightWristRoll];
     } else {
       raised_pose[LeftShoulderPitch] = start_pose[LeftShoulderPitch] - 0.80f;
       raised_pose[LeftShoulderRoll] = start_pose[LeftShoulderRoll] + 0.30f;
       raised_pose[LeftShoulderYaw] = start_pose[LeftShoulderYaw];
-      raised_pose[LeftElbow] = start_pose[LeftElbow] + 0.75f;
+      raised_pose[LeftElbow] = start_pose[LeftElbow] - 0.75f;
       raised_pose[LeftWristRoll] = start_pose[LeftWristRoll];
     }
 
@@ -447,10 +447,13 @@ class R1ArmDex3GraspExample {
   }
 
   std::array<float, DEX3_MOTOR_MAX> OpenHandPose() const {
-    return {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    std::array<float, DEX3_MOTOR_MAX> pose = HandPoseFromRatio(0.10f);
+    pose[3] = 0.0f;
+    pose[4] = 0.0f;
+    return pose;
   }
 
-  std::array<float, DEX3_MOTOR_MAX> ClosedHandPose(float ratio) const {
+  std::array<float, DEX3_MOTOR_MAX> HandPoseFromRatio(float ratio) const {
     ratio = std::clamp(ratio, 0.0f, 1.0f);
     const Dex3Limits& limits = side_ == Side::LEFT ? kLeftDex3Limits : kRightDex3Limits;
     std::array<float, DEX3_MOTOR_MAX> pose{};
@@ -460,6 +463,10 @@ class R1ArmDex3GraspExample {
     }
 
     return pose;
+  }
+
+  std::array<float, DEX3_MOTOR_MAX> ClosedHandPose(float ratio) const {
+    return HandPoseFromRatio(ratio);
   }
 
   void OpenHand(float duration_seconds,
