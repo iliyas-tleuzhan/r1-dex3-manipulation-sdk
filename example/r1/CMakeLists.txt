@@ -3,6 +3,9 @@ cmake_minimum_required(VERSION 3.10)
 add_executable(r1_arm_dex3_grasp_example low_level/r1_arm_dex3_grasp_example.cpp)
 target_link_libraries(r1_arm_dex3_grasp_example unitree_sdk2)
 
+add_executable(r1_arm_wave_hand_example low_level/r1_arm_wave_hand_example.cpp)
+target_link_libraries(r1_arm_wave_hand_example unitree_sdk2)
+
 add_executable(dual_dex3_arm_hand_motion_example low_level/dual_dex3_arm_hand_motion_example.cpp)
 target_link_libraries(dual_dex3_arm_hand_motion_example unitree_sdk2)
 
